@@ -1,0 +1,46 @@
+name: Recce CD
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+jobs:
+  recce-cd:
+    runs-on: ubuntu-latest
+    name: Recce Post-Deployment Validation
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      
+      - name: Install uv
+        run: python3 -m pip install uv
+      
+      - name: Install dependencies
+        run: uv pip install recce dbt-core --system
+      
+      - name: Run Recce CD baseline update
+        run: |
+          recce baseline update --profile-template default
+      
+      - name: Commit baseline changes
+        if: success()
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .recce/
+          git diff --quiet && git diff --staged --quiet || git commit -m "chore: update recce baseline after deployment"
+      
+      - name: Push baseline changes
+        if: success()
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
