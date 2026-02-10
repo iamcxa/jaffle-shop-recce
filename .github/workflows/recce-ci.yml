@@ -1,0 +1,67 @@
+name: Recce CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  recce-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt
+
+      - name: Set up dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << EOF
+          default:
+            target: dev
+            outputs:
+              dev:
+                type: snowflake
+                account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+                user: ${{ secrets.SNOWFLAKE_USER }}
+                password: ${{ secrets.SNOWFLAKE_PASSWORD }}
+                role: ${{ secrets.SNOWFLAKE_ROLE }}
+                database: ${{ secrets.SNOWFLAKE_DATABASE }}
+                warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+                schema: ${{ secrets.SNOWFLAKE_SCHEMA }}
+                threads: 4
+          EOF
+
+      - name: Generate dbt artifacts
+        run: |
+          dbt deps
+          dbt run --target dev
+          dbt docs generate --target dev
+
+      - name: Upload artifacts to Recce Cloud
+        uses: datarecce/recce-action@v1
+        with:
+          recce-cloud-api-token: ${{ secrets.RECCE_CLOUD_API_TOKEN }}
+          upload-artifacts: true
+
+  recce-summary:
+    needs: recce-ci
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Post Recce summary
+        uses: datarecce/recce-action@v1
+        with:
+          recce-cloud-api-token: ${{ secrets.RECCE_CLOUD_API_TOKEN }}
+          pr-comment: true
