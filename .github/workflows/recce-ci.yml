@@ -1,0 +1,65 @@
+name: Recce Cloud PR Validation
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-changes:
+    name: Validate dbt Changes with Recce
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build dbt artifacts for current branch
+        run: |
+          dbt deps
+          dbt docs generate --target ci
+        env:
+          DBT_ENV_SECRET_KEY: ${{ secrets.DBT_ENV_SECRET_KEY }}
+
+      - name: Upload to Recce Cloud
+        run: |
+          pip install recce-cloud
+          recce-cloud upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment PR with Recce link
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const recceOutput = fs.readFileSync('recce_cloud_upload.txt', 'utf8');
+            const sessionMatch = recceOutput.match(/Session ID: ([a-f0-9-]+)/);
+            if (sessionMatch) {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `🔍 **Recce Validation Complete**\n\nSession ID: \`${sessionMatch[1]}\`\n\n[View detailed analysis in Recce Cloud →](https://cloud.reccehq.com/sessions/${sessionMatch[1]})`
+              });
+            }
