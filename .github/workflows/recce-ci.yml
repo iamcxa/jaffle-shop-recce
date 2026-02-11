@@ -1,0 +1,69 @@
+name: Recce CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  recce-ci:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Checkout base branch
+        run: git checkout ${{ github.base_ref }}
+      
+      - name: Run dbt deps for base
+        run: dbt deps
+      
+      - name: Run dbt build for base
+        run: dbt build
+      
+      - name: Run dbt docs generate for base
+        run: dbt docs generate
+      
+      - name: Move base artifacts
+        run: |
+          mkdir -p ./base-target
+          mv target/manifest.json ./base-target/
+          mv target/catalog.json ./base-target/
+      
+      - name: Checkout current branch
+        run: git checkout ${{ github.head_ref }}
+      
+      - name: Run dbt deps for current
+        run: dbt deps
+      
+      - name: Run dbt build for current
+        run: dbt build
+      
+      - name: Run dbt docs generate for current
+        run: dbt docs generate
+      
+      - name: Run Recce CI
+        run: |
+          recce cloud run \
+            --project-id ${{ vars.RECCE_PROJECT_ID }} \
+            --base-branch main \
+            --base-catalog ./base-target/catalog.json \
+            --base-manifest ./base-target/manifest.json \
+            --catalog ./target/catalog.json \
+            --manifest ./target/manifest.json
+        env:
+          RECCE_STATE_PASSWORD: ${{ secrets.RECCE_STATE_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
