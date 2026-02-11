@@ -1,0 +1,42 @@
+name: Recce CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  recce-cd:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run dbt deps
+        run: dbt deps
+      
+      - name: Run dbt build
+        run: dbt build
+      
+      - name: Run dbt docs generate
+        run: dbt docs generate
+      
+      - name: Upload artifacts to Recce Cloud
+        run: |
+          recce cloud upload-artifacts \
+            --project-id ${{ vars.RECCE_PROJECT_ID }} \
+            --branch main
+        env:
+          RECCE_STATE_PASSWORD: ${{ secrets.RECCE_STATE_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
